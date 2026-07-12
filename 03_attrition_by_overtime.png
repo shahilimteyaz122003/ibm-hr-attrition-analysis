@@ -1,0 +1,165 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_style("whitegrid")
+plt.rcParams['figure.dpi'] = 120
+
+# -------------------------------
+# 1. LOAD RAW DATA
+# -------------------------------
+df = pd.read_csv("data/hr_attrition_raw.csv")
+print("Raw shape:", df.shape)
+print("Nulls:", df.isnull().sum().sum())
+print("Duplicates:", df.duplicated().sum())
+
+# -------------------------------
+# 2. CLEANING
+# -------------------------------
+
+# Drop constant columns (single unique value across all rows -> zero analytical value)
+constant_cols = [c for c in df.columns if df[c].nunique() == 1]
+print("\nDropping constant columns:", constant_cols)
+df = df.drop(columns=constant_cols)
+
+# Drop EmployeeNumber - it's just a unique ID, not a feature
+df = df.drop(columns=['EmployeeNumber'])
+
+# Standardize column names to snake_case for coding convenience
+df.columns = [
+    ''.join(['_' + c.lower() if c.isupper() else c for c in col]).lstrip('_')
+    for col in df.columns
+]
+
+# Map numeric satisfaction/rating codes to readable labels (helps EDA readability)
+satisfaction_map = {1: 'Low', 2: 'Medium', 3: 'High', 4: 'Very High'}
+for col in ['environment_satisfaction', 'job_satisfaction', 'relationship_satisfaction', 'job_involvement']:
+    df[col + '_label'] = df[col].map(satisfaction_map)
+
+worklife_map = {1: 'Bad', 2: 'Good', 3: 'Better', 4: 'Best'}
+df['work_life_balance_label'] = df['work_life_balance'].map(worklife_map)
+
+education_map = {1: 'Below College', 2: 'College', 3: 'Bachelor', 4: 'Master', 5: 'Doctor'}
+df['education_label'] = df['education'].map(education_map)
+
+df.to_csv("data/hr_attrition_cleaned.csv", index=False)
+print("\nCleaned shape:", df.shape)
+print("Saved -> data/hr_attrition_cleaned.csv")
+
+# -------------------------------
+# 3. EDA + VISUALS
+# -------------------------------
+
+# 3.1 Overall attrition rate
+plt.figure(figsize=(6,6))
+attr_counts = df['attrition'].value_counts()
+plt.pie(attr_counts, labels=attr_counts.index, autopct='%1.1f%%', startangle=90,
+        colors=['#2E86AB','#E63946'], wedgeprops={'edgecolor':'white','linewidth':2})
+plt.title('Overall Employee Attrition Rate', fontsize=13, fontweight='bold')
+plt.savefig('visuals/01_overall_attrition_rate.png', bbox_inches='tight')
+plt.close()
+
+# 3.2 Attrition by department
+plt.figure(figsize=(8,6))
+dept_attr = pd.crosstab(df['department'], df['attrition'], normalize='index') * 100
+dept_attr['Yes'].sort_values(ascending=False).plot(kind='bar', color='#E63946')
+plt.title('Attrition Rate by Department (%)', fontsize=13, fontweight='bold')
+plt.ylabel('Attrition Rate (%)')
+plt.xticks(rotation=20)
+plt.savefig('visuals/02_attrition_by_department.png', bbox_inches='tight')
+plt.close()
+
+# 3.3 Attrition by OverTime
+plt.figure(figsize=(7,6))
+ot_attr = pd.crosstab(df['over_time'], df['attrition'], normalize='index') * 100
+ot_attr['Yes'].plot(kind='bar', color=['#2E86AB','#E63946'])
+plt.title('Attrition Rate: OverTime vs No OverTime', fontsize=13, fontweight='bold')
+plt.ylabel('Attrition Rate (%)')
+plt.xticks(rotation=0)
+plt.savefig('visuals/03_attrition_by_overtime.png', bbox_inches='tight')
+plt.close()
+
+# 3.4 Age distribution by attrition
+plt.figure(figsize=(9,6))
+sns.histplot(data=df, x='age', hue='attrition', kde=True, bins=25, palette=['#2E86AB','#E63946'])
+plt.title('Age Distribution by Attrition Status', fontsize=13, fontweight='bold')
+plt.savefig('visuals/04_age_distribution_by_attrition.png', bbox_inches='tight')
+plt.close()
+
+# 3.5 Monthly income by attrition
+plt.figure(figsize=(8,6))
+sns.boxplot(data=df, x='attrition', y='monthly_income', palette=['#2E86AB','#E63946'])
+plt.title('Monthly Income by Attrition Status', fontsize=13, fontweight='bold')
+plt.savefig('visuals/05_income_by_attrition.png', bbox_inches='tight')
+plt.close()
+
+# 3.6 Attrition by job role
+plt.figure(figsize=(9,7))
+role_attr = pd.crosstab(df['job_role'], df['attrition'], normalize='index') * 100
+role_attr['Yes'].sort_values().plot(kind='barh', color='#E63946')
+plt.title('Attrition Rate by Job Role (%)', fontsize=13, fontweight='bold')
+plt.xlabel('Attrition Rate (%)')
+plt.savefig('visuals/06_attrition_by_jobrole.png', bbox_inches='tight')
+plt.close()
+
+# 3.7 Years at company vs attrition
+plt.figure(figsize=(9,6))
+sns.boxplot(data=df, x='attrition', y='years_at_company', palette=['#2E86AB','#E63946'])
+plt.title('Years at Company by Attrition Status', fontsize=13, fontweight='bold')
+plt.savefig('visuals/07_years_at_company_by_attrition.png', bbox_inches='tight')
+plt.close()
+
+# 3.8 Work-life balance vs attrition
+plt.figure(figsize=(8,6))
+wlb_attr = pd.crosstab(df['work_life_balance_label'], df['attrition'], normalize='index') * 100
+wlb_order = ['Bad','Good','Better','Best']
+wlb_attr.loc[wlb_order, 'Yes'].plot(kind='bar', color='#E63946')
+plt.title('Attrition Rate by Work-Life Balance (%)', fontsize=13, fontweight='bold')
+plt.ylabel('Attrition Rate (%)')
+plt.xticks(rotation=0)
+plt.savefig('visuals/08_attrition_by_worklife_balance.png', bbox_inches='tight')
+plt.close()
+
+print("\nAll 8 visuals saved in /visuals folder.")
+
+# -------------------------------
+# 4. KEY INSIGHTS
+# -------------------------------
+overall_rate = attr_counts['Yes'] / attr_counts.sum() * 100
+worst_dept = dept_attr['Yes'].idxmax()
+worst_dept_rate = dept_attr['Yes'].max()
+ot_yes_rate = ot_attr.loc['Yes','Yes']
+ot_no_rate = ot_attr.loc['No','Yes']
+worst_role = role_attr['Yes'].idxmax()
+worst_role_rate = role_attr['Yes'].max()
+avg_income_stay = df[df['attrition']=='No']['monthly_income'].mean()
+avg_income_leave = df[df['attrition']=='Yes']['monthly_income'].mean()
+avg_years_stay = df[df['attrition']=='No']['years_at_company'].mean()
+avg_years_leave = df[df['attrition']=='Yes']['years_at_company'].mean()
+
+insights = f"""
+KEY INSIGHTS
+============
+Overall attrition rate: {overall_rate:.1f}%
+
+Highest attrition department: {worst_dept} ({worst_dept_rate:.1f}%)
+Highest attrition job role: {worst_role} ({worst_role_rate:.1f}%)
+
+OverTime impact:
+  Employees WITH overtime: {ot_yes_rate:.1f}% attrition
+  Employees WITHOUT overtime: {ot_no_rate:.1f}% attrition
+  -> Overtime employees leave at more than double the rate
+
+Average monthly income - stayed: ${avg_income_stay:,.0f}
+Average monthly income - left: ${avg_income_leave:,.0f}
+-> Employees who leave earn noticeably less on average
+
+Average tenure - stayed: {avg_years_stay:.1f} years
+Average tenure - left: {avg_years_leave:.1f} years
+-> Attrition is concentrated among newer employees
+"""
+print(insights)
+
+with open("visuals/insights_summary.txt", "w") as f:
+    f.write(insights)
